@@ -1,65 +1,93 @@
-import Image from "next/image";
+"use client"
+
+import { useState } from "react"
+import FileTree from "@/components/sidebar/file-tree"
+import { Button } from "@/components/ui/button"
+import { FolderOpen, RefreshCw } from "lucide-react"
+import { FileNode, pickFolderAndGetFiles } from "@/lib/file-system"
 
 export default function Home() {
+  const [dynamicFiles, setDynamicFiles] = useState<FileNode[] | null>(null)
+  const [isPicking, setIsPicking] = useState(false)
+
+  const handleSelectFolder = async () => {
+    if (isPicking) return
+
+    // Clear existing folder if any
+    if (dynamicFiles) {
+      const confirmChange = confirm(
+        "Current folder will be closed. Do you want to select a new folder?"
+      )
+      if (!confirmChange) return
+      setDynamicFiles(null)
+    }
+
+    setIsPicking(true)
+    try {
+      const files = await pickFolderAndGetFiles()
+      if (files.length === 0) {
+        alert("Selected folder is empty. Please try again.")
+      } else {
+        setDynamicFiles(files)
+      }
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        console.log("Folder selection cancelled by user")
+      } else {
+        alert("Folder selection failed. Please try again.")
+        console.error(err)
+      }
+    } finally {
+      setIsPicking(false)
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="flex h-screen w-full overflow-hidden">
+
+      {/* Sidebar */}
+      <aside className="w-72 flex-shrink-0 border-r bg-slate-50 p-4">
+        {dynamicFiles ? (
+          <FileTree files={dynamicFiles} />
+        ) : (
+          <div className="text-slate-500 text-sm text-center mt-10">
+            No folder selected
+          </div>
+        )}
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col items-center justify-center bg-slate-100 relative">
+        <div className="text-center space-y-6 relative z-10">
+          <h1 className="text-2xl font-semibold text-slate-800">
+            Repo to Prompt Generator
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button
+              onClick={handleSelectFolder}
+              size="lg"
+              disabled={isPicking}
+              className="flex items-center gap-2 px-6 py-5 text-base cursor-pointer hover:scale-105 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+              <FolderOpen size={18}/>
+              {dynamicFiles ? "Change Folder" : "Select Folder"}
+            </Button>
+
+            {dynamicFiles && (
+              <Button
+                onClick={() => alert("Add your extra action here")}
+                size="lg"
+                variant="outline"
+                className="flex items-center gap-2 px-6 py-5 text-base hover:scale-105 transition"
+              >
+                <RefreshCw size={18}/>
+                Another Action
+              </Button>
+            )}
+          </div>
         </div>
       </main>
     </div>
-  );
+  )
 }
