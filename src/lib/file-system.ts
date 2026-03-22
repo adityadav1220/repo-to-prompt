@@ -1,55 +1,174 @@
 import ignore from "ignore"
+import { FileNode } from "@/types/file-node"
 
-export type FileNode = {
-  id: string; // Full relative path
-  name: string;
-  type: "file" | "folder";
-  children?: FileNode[];
-  handle?: FileSystemFileHandle | FileSystemDirectoryHandle;
-}
+const DEFAULT_IGNORES = [
+  "node_modules",
+  ".next",
+  "build",
+  ".git",
+  ".DS_Store"
+]
 
-const DEFAULT_IGNORES = ["node_modules", ".next", "build", ".git", ".DS_Store"];
+/*
+-----------------------------------------
+FILE TREE BUILDER
+-----------------------------------------
+*/
 
 export async function getFilesRecursively(
   directoryHandle: FileSystemDirectoryHandle,
   parentPath = "",
   ig = ignore().add(DEFAULT_IGNORES)
 ): Promise<FileNode[]> {
-  const nodes: FileNode[] = [];
-  
-  // Check for .gitignore in CURRENT directory
+
+  const nodes: FileNode[] = []
+
+  // Check if .gitignore exists in this directory
   try {
-    const gitignoreHandle = await directoryHandle.getFileHandle(".gitignore");
-    const file = await gitignoreHandle.getFile();
-    const text = await file.text();
-    ig.add(text);
-  } catch (e) { /* no gitignore here */ }
+    const gitignoreHandle = await directoryHandle.getFileHandle(".gitignore")
+    const file = await gitignoreHandle.getFile()
+    const text = await file.text()
+
+    ig.add(text)
+  } catch (e) {
+    // No .gitignore in this folder
+  }
 
   for await (const entry of (directoryHandle as any).values()) {
-    const relPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
 
-    if (entry.name.startsWith(".") && entry.name !== ".gitignore") continue;
-    if (ig.ignores(relPath)) continue;
+    const relPath = parentPath
+      ? `${parentPath}/${entry.name}`
+      : entry.name
+
+    // ignore hidden files except .gitignore
+    if (entry.name.startsWith(".") && entry.name !== ".gitignore") continue
+
+    // ignore based on gitignore
+    if (ig.ignores(relPath)) continue
 
     if (entry.kind === "file") {
-      nodes.push({ id: relPath, name: entry.name, type: "file", handle: entry });
+
+      nodes.push({
+        id: relPath,
+        name: entry.name,
+        type: "file",
+        handle: entry
+      })
+
     } else {
-      const children = await getFilesRecursively(entry, relPath, ig);
-      nodes.push({ id: relPath, name: entry.name, type: "folder", children, handle: entry });
+
+      const children = await getFilesRecursively(
+        entry,
+        relPath,
+        ig
+      )
+
+      nodes.push({
+        id: relPath,
+        name: entry.name,
+        type: "folder",
+        children,
+        handle: entry
+      })
+
     }
   }
 
-  // Sort: Folders first, then files alphabetically
+  // sort folders first then files
   return nodes.sort((a, b) => {
-    if (a.type === b.type) return a.name.localeCompare(b.name);
-    return a.type === "folder" ? -1 : 1;
-  });
+    if (a.type === b.type) {
+      return a.name.localeCompare(b.name)
+    }
+    return a.type === "folder" ? -1 : 1
+  })
 }
 
+/*
+-----------------------------------------
+FOLDER PICKER
+-----------------------------------------
+*/
+
 export async function pickFolderAndGetFiles(): Promise<FileNode[]> {
-  if (!('showDirectoryPicker' in window)) {
-    throw new Error("Your browser does not support the File System Access API.");
+
+  if (!("showDirectoryPicker" in window)) {
+    throw new Error(
+      "Your browser does not support the File System Access API."
+    )
   }
-  const directoryHandle = await (window as any).showDirectoryPicker();
-  return getFilesRecursively(directoryHandle);
+
+  const directoryHandle = await (window as any).showDirectoryPicker()
+
+  return getFilesRecursively(directoryHandle)
+}
+
+/*
+-----------------------------------------
+FILE CONTENT RETRIEVAL
+-----------------------------------------
+*/
+
+export async function getFileContent(
+  handle: FileSystemFileHandle
+): Promise<string> {
+
+  try {
+    const file = await handle.getFile()
+    const text = await file.text()
+    return text
+
+  } catch (error) {
+
+    console.error("Failed to read file:", error)
+    return ""
+
+  }
+}
+
+/*
+-----------------------------------------
+GET CONTENT FROM A FILENODE
+-----------------------------------------
+*/
+
+export async function getFileNodeContent(
+  node: FileNode
+): Promise<string | null> {
+
+  if (node.type !== "file" || !node.handle) {
+    return null
+  }
+
+  const handle = node.handle as FileSystemFileHandle
+
+  return getFileContent(handle)
+}
+
+/*
+-----------------------------------------
+READ ALL FILE CONTENTS (RECURSIVE)
+-----------------------------------------
+*/
+
+export async function readAllFiles(
+  nodes: FileNode[]
+): Promise<void> {
+
+  for (const node of nodes) {
+
+    if (node.type === "file") {
+
+      const content = await getFileNodeContent(node)
+
+      console.log("FILE:", node.id)
+      console.log(content)
+
+    }
+
+    if (node.type === "folder" && node.children) {
+
+      await readAllFiles(node.children)
+
+    }
+  }
 }
