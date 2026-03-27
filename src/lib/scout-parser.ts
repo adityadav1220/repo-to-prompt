@@ -1,11 +1,14 @@
 import { ScoutResult } from "@/types/scout-result"
+import * as parser from "@babel/parser"
+import traverse from "@babel/traverse"
 
+/**
+ * Parse file using Babel (supports TS + JSX)
+ */
 export function scoutFile(
   filePath: string,
   content: string
 ): ScoutResult {
-
-  const lines = content.split("\n").slice(0, 40)
 
   const imports: string[] = []
   const exports: string[] = []
@@ -13,74 +16,114 @@ export function scoutFile(
   const classes: string[] = []
   const frameworkHints: string[] = []
 
-  for (const line of lines) {
+  let ast: any
 
-    const trimmed = line.trim()
+  try {
+    ast = parser.parse(content, {
+      sourceType: "module",
+      plugins: [
+        "typescript",
+        "jsx"
+      ]
+    })
+  } catch (err) {
+    console.log("Parse failed:", filePath, err)
 
-    // IMPORTS
-    if (trimmed.startsWith("import")) {
-      imports.push(trimmed)
-
-      if (trimmed.includes("react")) frameworkHints.push("React")
-      if (trimmed.includes("next")) frameworkHints.push("Next.js")
-      if (trimmed.includes("express")) frameworkHints.push("Express")
-      if (trimmed.includes("vue")) frameworkHints.push("Vue")
-      if (trimmed.includes("@angular")) frameworkHints.push("Angular")
+    return {
+      filePath,
+      imports: [],
+      exports: [],
+      functions: [],
+      classes: [],
+      frameworkHints: []
     }
+  }
+
+  traverse(ast, {
+    // IMPORTS
+    ImportDeclaration(path: any) {
+      const val = path.node.source.value
+      imports.push(val)
+
+      if (val.includes("react")) frameworkHints.push("React")
+      if (val.includes("next")) frameworkHints.push("Next.js")
+      if (val.includes("express")) frameworkHints.push("Express")
+    },
 
     // EXPORTS
-    if (trimmed.startsWith("export")) {
-      exports.push(trimmed)
+    ExportNamedDeclaration(path: any) {
+      const node = path.node
 
-      if (trimmed.startsWith("export default")) {
-        exports.push("default")
+      if (node.declaration) {
+        if (node.declaration.id?.name) {
+          exports.push(node.declaration.id.name)
+        }
+
+        if (node.declaration.declarations) {
+          for (const decl of node.declaration.declarations) {
+            if (decl.id?.name) {
+              exports.push(decl.id.name)
+            }
+          }
+        }
+      }
+
+      // export { a, b }
+      if (node.specifiers) {
+        for (const spec of node.specifiers) {
+          exports.push(spec.exported.name)
+        }
+      }
+    },
+
+    ExportDefaultDeclaration() {
+      exports.push("default")
+    },
+
+    // FUNCTIONS
+    FunctionDeclaration(path: any) {
+      if (path.node.id?.name) {
+        functions.push(path.node.id.name)
+      }
+    },
+
+    VariableDeclarator(path: any) {
+      const init = path.node.init
+
+      if (
+        init &&
+        (init.type === "ArrowFunctionExpression" ||
+          init.type === "FunctionExpression")
+      ) {
+        if (path.node.id?.name) {
+          functions.push(path.node.id.name)
+        }
+      }
+    },
+
+    // CLASSES
+    ClassDeclaration(path: any) {
+      if (path.node.id?.name) {
+        classes.push(path.node.id.name)
       }
     }
+  })
 
-    // FUNCTION (normal)
-    const funcMatch = trimmed.match(/function\s+([a-zA-Z0-9_]+)/)
-    if (funcMatch) {
-      functions.push(funcMatch[1])
-    }
+  // extra hints
+  if (content.includes("useState") || content.includes("useEffect")) {
+    frameworkHints.push("React Component")
+  }
 
-    // ARROW FUNCTION (improved)
-    const arrowMatch = trimmed.match(
-      /const\s+([a-zA-Z0-9_]+)\s*=\s*(async\s*)?\(/
-    )
-    if (arrowMatch) {
-      functions.push(arrowMatch[1])
-    }
-
-    // CLASS
-    const classMatch = trimmed.match(/class\s+([a-zA-Z0-9_]+)/)
-    if (classMatch) {
-      classes.push(classMatch[1])
-    }
-
-    // REACT HOOK DETECTION
-    if (
-      trimmed.includes("useState") ||
-      trimmed.includes("useEffect")
-    ) {
-      frameworkHints.push("React Component")
-    }
-
-    // NEXT CLIENT COMPONENT
-    if (
-      trimmed.includes('"use client"') ||
-      trimmed.includes("'use client'")
-    ) {
-      frameworkHints.push("Next.js Client Component")
-    }
-
+  if (content.includes('"use client"') || content.includes("'use client'")) {
+    frameworkHints.push("Next.js Client Component")
   }
 
   return {
     filePath,
-    imports: [...new Set(imports)],
-    exports: [...new Set(exports)],
-    functions: [...new Set(functions)],
-    classes: [...new Set(classes)],
+    imports: [...new Set(imports.filter(Boolean))],
+    exports: [...new Set(exports.filter(Boolean))],
+    functions: [...new Set(functions.filter(Boolean))],
+    classes: [...new Set(classes.filter(Boolean))],
     frameworkHints: [...new Set(frameworkHints)]
   }
 }
