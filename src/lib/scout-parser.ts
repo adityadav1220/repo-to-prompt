@@ -1,41 +1,52 @@
 import { ScoutResult } from "@/types/scout-result"
 import * as parser from "@babel/parser"
 import traverse from "@babel/traverse"
+import { isLikelyBinaryFile, rawContentForPrompt } from "@/lib/text-file-guard"
+import { extractCrossLanguageImports } from "@/lib/import-extractor"
 
 /**
  * Parse file using Babel (supports TS + JSX)
  */
-export function scoutFile(
-  filePath: string,
-  content: string
-): ScoutResult {
-
+export function scoutFile(filePath: string, content: string): ScoutResult {
   const imports: string[] = []
   const exports: string[] = []
   const functions: string[] = []
   const classes: string[] = []
   const frameworkHints: string[] = []
+  const propTypes: string[] = []
 
-  let ast: any
-
-  try {
-    ast = parser.parse(content, {
-      sourceType: "module",
-      plugins: [
-        "typescript",
-        "jsx"
-      ]
-    })
-  } catch (err) {
-    console.log("Parse failed:", filePath, err)
-
+  if (isLikelyBinaryFile(filePath, content)) {
     return {
       filePath,
       imports: [],
       exports: [],
       functions: [],
       classes: [],
-      frameworkHints: []
+      frameworkHints: [],
+      propTypes: [],
+      raw: rawContentForPrompt(filePath, content)
+    }
+  }
+
+  const heuristicImports = extractCrossLanguageImports(filePath, content)
+
+  let ast: any
+
+  try {
+    ast = parser.parse(content, {
+      sourceType: "module",
+      plugins: ["typescript", "jsx"]
+    })
+  } catch {
+    return {
+      filePath,
+      imports: [...new Set(heuristicImports)],
+      exports: [],
+      functions: [],
+      classes: [],
+      frameworkHints: [],
+      propTypes: [],
+      raw: rawContentForPrompt(filePath, content)
     }
   }
 
@@ -106,6 +117,20 @@ export function scoutFile(
       if (path.node.id?.name) {
         classes.push(path.node.id.name)
       }
+    },
+
+    // React-style prop containers (interfaces / type aliases ending in "Props")
+    TSInterfaceDeclaration(path: any) {
+      const name = path.node.id?.name
+      if (name && name.toLowerCase().includes("props")) {
+        propTypes.push(name)
+      }
+    },
+    TSTypeAliasDeclaration(path: any) {
+      const name = path.node.id?.name
+      if (name && name.toLowerCase().includes("props")) {
+        propTypes.push(name)
+      }
     }
   })
 
@@ -120,10 +145,35 @@ export function scoutFile(
 
   return {
     filePath,
-    imports: [...new Set(imports.filter(Boolean))],
+    imports: [
+      ...new Set([...imports.filter(Boolean), ...heuristicImports])
+    ],
     exports: [...new Set(exports.filter(Boolean))],
     functions: [...new Set(functions.filter(Boolean))],
     classes: [...new Set(classes.filter(Boolean))],
-    frameworkHints: [...new Set(frameworkHints)]
+    frameworkHints: [...new Set(frameworkHints)],
+    propTypes: [...new Set(propTypes.filter(Boolean))],
+    raw: rawContentForPrompt(filePath, content)
+  }
+}
+
+export function skippedScoutResult(
+  filePath: string,
+  kind: "too-large" | "read-error"
+): ScoutResult {
+  const raw =
+    kind === "too-large"
+      ? "[File omitted: exceeds browser analysis size limit.]"
+      : "[File could not be read.]"
+  return {
+    filePath,
+    imports: [],
+    exports: [],
+    functions: [],
+    classes: [],
+    frameworkHints: [],
+    propTypes: [],
+    raw,
+    readIssue: kind
   }
 }

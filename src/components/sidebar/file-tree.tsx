@@ -105,11 +105,13 @@ const TreeNode = memo(
 export default function FileTree({
   files,
   selected,
-  setSelected
+  setSelected,
+  onSelectionChange
 }: {
   files: FileNode[]
   selected: Set<string>
   setSelected: React.Dispatch<React.SetStateAction<Set<string>>>
+  onSelectionChange?: (next: Set<string>) => void
 }) {
 
   const { nodeMap, parentMap } = useMemo(() => {
@@ -135,7 +137,6 @@ export default function FileTree({
 
   const toggle = useCallback(
     (node: FileNode, checked: boolean) => {
-
       setSelected((prev) => {
         const next = new Set(prev)
 
@@ -162,10 +163,14 @@ export default function FileTree({
           parentId = parentMap.get(parentId)
         }
 
+        if (onSelectionChange) {
+          onSelectionChange(next)
+        }
+
         return next
       })
     },
-    [nodeMap, parentMap, setSelected]
+    [nodeMap, parentMap, setSelected, onSelectionChange]
   )
 
   const fileCount = useMemo(() => {
@@ -177,7 +182,7 @@ export default function FileTree({
   return (
     <div className="flex flex-col h-full">
 
-      <div className="flex justify-between items-center mb-4 sticky top-0 bg-slate-50 z-10 py-2">
+      <div className="flex justify-between items-center mb-2 sticky top-0 bg-slate-50 z-10 py-2 pr-1">
         <h3 className="font-bold text-slate-800">Files</h3>
 
         <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">
@@ -185,7 +190,7 @@ export default function FileTree({
         </span>
       </div>
 
-      <div className="overflow-y-auto pr-2 custom-scrollbar">
+      <div className="pb-2">
 
         {files.map((n) => (
           <TreeNode

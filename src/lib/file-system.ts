@@ -158,10 +158,7 @@ export async function readAllFiles(
 
     if (node.type === "file") {
 
-      const content = await getFileNodeContent(node)
-
-      console.log("FILE:", node.id)
-      console.log(content)
+      await getFileNodeContent(node)
 
     }
 
